@@ -141,14 +141,21 @@ app.MapPost("/api/quizzes", async (QuizDraft draft, HttpContext http, QuizDbCont
     if (user.Role != UserRole.Organizer) return Results.Forbid();
     if (string.IsNullOrWhiteSpace(draft.Title) || draft.Questions.Count == 0) return Results.BadRequest(new { message = "Викторина должна иметь название и хотя бы один вопрос." });
 
-    var quiz = new Quiz
+    Quiz? quiz = null;
+    var isNewQuiz = draft.Id is null;
+    if (draft.Id is not null)
     {
-        OrganizerId = user.Id,
-        Title = draft.Title.Trim(),
-        Category = string.IsNullOrWhiteSpace(draft.Category) ? "Общее" : draft.Category.Trim(),
-        SecondsPerQuestion = Math.Clamp(draft.SecondsPerQuestion, 10, 180),
-        Rules = draft.Rules?.Trim() ?? ""
-    };
+        quiz = await db.Quizzes.Include(x => x.Questions).ThenInclude(x => x.Options)
+            .SingleOrDefaultAsync(x => x.Id == draft.Id && x.OrganizerId == user.Id);
+        if (quiz is null) return Results.NotFound(new { message = "Викторина не найдена." });
+        db.Questions.RemoveRange(quiz.Questions);
+    }
+
+    quiz ??= new Quiz { OrganizerId = user.Id };
+    quiz.Title = draft.Title.Trim();
+    quiz.Category = string.IsNullOrWhiteSpace(draft.Category) ? "Общее" : draft.Category.Trim();
+    quiz.SecondsPerQuestion = Math.Clamp(draft.SecondsPerQuestion, 10, 180);
+    quiz.Rules = draft.Rules?.Trim() ?? "";
 
     foreach (var (questionDraft, index) in draft.Questions.Select((question, index) => (question, index)))
     {
@@ -162,7 +169,7 @@ app.MapPost("/api/quizzes", async (QuizDraft draft, HttpContext http, QuizDbCont
         quiz.Questions.Add(question);
     }
 
-    db.Quizzes.Add(quiz);
+    if (isNewQuiz) db.Quizzes.Add(quiz);
     await db.SaveChangesAsync();
     return Results.Ok(ToQuizDto(quiz));
 });
