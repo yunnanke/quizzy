@@ -13,12 +13,9 @@ var frontendPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRoot
 builder.Services.AddDbContext<QuizDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Default");
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        throw new InvalidOperationException("ConnectionStrings:Default is not configured. Use user-secrets or ConnectionStrings__Default.");
-    }
-
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(string.IsNullOrWhiteSpace(connectionString)
+        ? "Host=localhost;Database=quizmvp;Username=postgres;Password=postgres"
+        : connectionString);
 });
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -47,7 +44,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<QuizDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    await db.Database.MigrateAsync();
 }
 
 app.UseAuthentication();
