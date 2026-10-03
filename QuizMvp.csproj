@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- The legacy MVP stays buildable while the new backend is maintained separately. -->
+  <ItemGroup>
+    <Compile Remove="backend\**" />
+    <EmbeddedResource Remove="backend\**" />
+    <None Remove="backend\**" />
+  </ItemGroup>
+</Project>
