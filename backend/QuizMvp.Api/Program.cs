@@ -120,7 +120,7 @@ app.MapPost("/api/logout", async (HttpContext http) =>
 app.MapGet("/api/me", async (HttpContext http, QuizDbContext db) =>
 {
     var user = await CurrentUserAsync(http, db);
-    return Results.Ok(user is null ? null : ToPublic(user));
+    return Results.Json(user is null ? null : ToPublic(user));
 });
 
 app.MapGet("/api/quizzes", async (HttpContext http, QuizDbContext db) =>

@@ -39,7 +39,9 @@ async function api(path, options = {}) {
     const error = await response.json().catch(() => ({ message: "Ошибка запроса" }));
     throw new Error(error.message || error.Message || "Ошибка запроса");
   }
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
 }
 
 async function loadMe() {
