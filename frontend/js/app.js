@@ -86,8 +86,12 @@ async function submitAuth(event) {
 }
 
 async function logout() {
-  await api("/api/logout", { method: "POST" });
-  location.reload();
+  try {
+    await api("/api/logout", { method: "POST" });
+    location.reload();
+  } catch (error) {
+    $("#authError").textContent = error.message;
+  }
 }
 
 async function loadDashboard() {
@@ -183,6 +187,7 @@ function addOption(questionNode, option = null) {
 }
 
 async function saveQuiz() {
+  $("#builderError").textContent = "";
   const questions = $$("#questionsEditor .question-card").map((card) => ({
     id: card.dataset.id || null,
     text: card.querySelector(".q-text").value,
@@ -203,9 +208,13 @@ async function saveQuiz() {
     rules: $("#quizRules").value,
     questions
   };
-  await api("/api/quizzes", { method: "POST", body: JSON.stringify(payload) });
-  await loadDashboard();
-  showView("dashboard");
+  try {
+    await api("/api/quizzes", { method: "POST", body: JSON.stringify(payload) });
+    await loadDashboard();
+    showView("dashboard");
+  } catch (error) {
+    $("#builderError").textContent = error.message;
+  }
 }
 
 async function createSession() {
