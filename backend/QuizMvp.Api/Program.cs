@@ -9,6 +9,7 @@ using QuizMvp.Api.Data;
 using QuizMvp.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true, reloadOnChange: false);
 var frontendPath = ResolveFrontendPath(builder.Environment.ContentRootPath);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -17,9 +18,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddDbContext<QuizDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Default");
-    options.UseNpgsql(string.IsNullOrWhiteSpace(connectionString)
-        ? "Host=localhost;Database=quizmvp;Username=postgres;Password=postgres"
-        : connectionString);
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException("ConnectionStrings:Default не настроен. Укажите строку подключения Neon через user-secrets или переменную окружения.");
+    }
+
+    options.UseNpgsql(connectionString);
 });
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -48,9 +52,38 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<QuizDbContext>();
-    if (!await db.Database.CanConnectAsync())
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseStartup");
+    var connected = false;
+    Exception? lastException = null;
+
+    for (var attempt = 1; attempt <= 5 && !connected; attempt++)
     {
-        throw new InvalidOperationException("Не удалось подключиться к PostgreSQL Neon.");
+        try
+        {
+            await db.Database.OpenConnectionAsync();
+            connected = true;
+            await db.Database.CloseConnectionAsync();
+        }
+        catch (Exception exception)
+        {
+            lastException = exception;
+            logger.LogWarning(exception, "Попытка подключения к PostgreSQL Neon {Attempt}/5 завершилась ошибкой.", attempt);
+        }
+
+        if (!connected && attempt < 5)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    if (!connected)
+    {
+        var detail = lastException?.GetBaseException().Message;
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(detail)
+                ? "Не удалось подключиться к PostgreSQL Neon после 5 попыток. Проверьте доступность базы и локальные user-secrets."
+                : $"Не удалось подключиться к PostgreSQL Neon: {detail}",
+            lastException);
     }
 }
 
