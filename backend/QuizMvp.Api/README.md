@@ -29,4 +29,4 @@ dotnet run --project .\backend\QuizMvp.Api\QuizMvp.Api.csproj
 - API health: `/api/health`
 - PostgreSQL health: `/api/health/db`
 
-При первом запуске приложение создаёт таблицы текущей модели через EF Core `EnsureCreated`. После сверки с реальной схемой Neon это будет заменено на версионируемые миграции.
+Приложение подключается к уже существующей схеме Neon и не выполняет `EnsureCreated` или миграции при запуске. Это защищает имеющиеся данные; маппинг EF Core соответствует таблицам `Users`, `Quizzes`, `Questions`, `AnswerOptions`, `Sessions` и `ParticipantAnswers`.

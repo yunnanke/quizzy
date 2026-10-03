@@ -6,4 +6,5 @@ Data/store.json
 *.suo
 .env
 appsettings.Local.json
+.neon-probe/
 

@@ -48,7 +48,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<QuizDbContext>();
-    await db.Database.MigrateAsync();
+    if (!await db.Database.CanConnectAsync())
+    {
+        throw new InvalidOperationException("Не удалось подключиться к PostgreSQL Neon.");
+    }
 }
 
 app.UseAuthentication();
@@ -125,16 +128,16 @@ app.MapGet("/api/quizzes", async (HttpContext http, QuizDbContext db) =>
     var user = await RequireUserAsync(http, db);
     if (user is null) return Results.Unauthorized();
 
-    var query = db.Quizzes.AsNoTracking().Include(x => x.Questions).ThenInclude(x => x.Options).AsQueryable();
-    if (user.Role == UserRole.Organizer) query = query.Where(x => x.OrganizerId == user.Id);
+    var query = db.Quizzes.AsNoTracking().AsSplitQuery().Include(x => x.Questions).ThenInclude(x => x.Options).AsQueryable();
+    if (user.Role == UserRole.Organizer) query = query.Where(x => x.CreatorId == user.Id);
     var quizzes = await query.OrderByDescending(x => x.CreatedAt).ToListAsync();
     return Results.Ok(quizzes.Select(ToQuizDto));
 });
 
-app.MapGet("/api/quizzes/{id:guid}", async (Guid id, HttpContext http, QuizDbContext db) =>
+app.MapGet("/api/quizzes/{id:int}", async (int id, HttpContext http, QuizDbContext db) =>
 {
     var user = await RequireUserAsync(http, db);
-    var quiz = await db.Quizzes.AsNoTracking().Include(x => x.Questions).ThenInclude(x => x.Options).SingleOrDefaultAsync(x => x.Id == id);
+    var quiz = await db.Quizzes.AsNoTracking().AsSplitQuery().Include(x => x.Questions).ThenInclude(x => x.Options).SingleOrDefaultAsync(x => x.Id == id);
     return user is null ? Results.Unauthorized() : quiz is null ? Results.NotFound() : Results.Ok(ToQuizDto(quiz));
 });
 
@@ -150,15 +153,16 @@ app.MapPost("/api/quizzes", async (QuizDraft draft, HttpContext http, QuizDbCont
     if (draft.Id is not null)
     {
         quiz = await db.Quizzes.Include(x => x.Questions).ThenInclude(x => x.Options)
-            .SingleOrDefaultAsync(x => x.Id == draft.Id && x.OrganizerId == user.Id);
+            .SingleOrDefaultAsync(x => x.Id == draft.Id && x.CreatorId == user.Id);
         if (quiz is null) return Results.NotFound(new { message = "Викторина не найдена." });
         db.Questions.RemoveRange(quiz.Questions);
     }
 
-    quiz ??= new Quiz { OrganizerId = user.Id };
+    quiz ??= new Quiz { CreatorId = user.Id, CreatedAt = DateTime.UtcNow, IsActive = true };
     quiz.Title = draft.Title.Trim();
     quiz.Category = string.IsNullOrWhiteSpace(draft.Category) ? "Общее" : draft.Category.Trim();
     quiz.SecondsPerQuestion = Math.Clamp(draft.SecondsPerQuestion, 10, 180);
+    quiz.Description = draft.Rules?.Trim() ?? "";
     quiz.Rules = draft.Rules?.Trim() ?? "";
 
     foreach (var (questionDraft, index) in draft.Questions.Select((question, index) => (question, index)))
@@ -182,7 +186,7 @@ app.MapPost("/api/sessions", async (CreateSessionRequest request, HttpContext ht
 {
     var user = await RequireUserAsync(http, db);
     if (user is null) return Results.Unauthorized();
-    var quiz = await db.Quizzes.SingleOrDefaultAsync(x => x.Id == request.QuizId && x.OrganizerId == user.Id);
+    var quiz = await db.Quizzes.SingleOrDefaultAsync(x => x.Id == request.QuizId && x.CreatorId == user.Id);
     if (quiz is null) return Results.NotFound();
     var session = new QuizSession { QuizId = quiz.Id, OrganizerId = user.Id, Code = await GenerateUniqueCodeAsync(db) };
     db.QuizSessions.Add(session);
@@ -194,10 +198,8 @@ app.MapPost("/api/join", async (JoinSessionRequest request, HttpContext http, Qu
 {
     var user = await RequireUserAsync(http, db);
     if (user is null) return Results.Unauthorized();
-    var session = await db.QuizSessions.Include(x => x.Participants).SingleOrDefaultAsync(x => x.Code == request.Code.Trim().ToUpper());
+    var session = await db.QuizSessions.SingleOrDefaultAsync(x => x.Code == request.Code.Trim().ToUpper());
     if (session is null || session.Status == SessionStatus.Finished) return Results.BadRequest(new { message = "Комната не найдена или уже завершена." });
-    if (session.Participants.All(x => x.UserId != user.Id)) session.Participants.Add(new SessionParticipant { SessionId = session.Id, UserId = user.Id });
-    await db.SaveChangesAsync();
     return Results.Ok(new { session.Id, session.Code, session.Status });
 });
 
@@ -206,8 +208,8 @@ app.MapGet("/api/history", async (HttpContext http, QuizDbContext db) =>
     var user = await RequireUserAsync(http, db);
     if (user is null) return Results.Unauthorized();
     object history = user.Role == UserRole.Organizer
-        ? await db.QuizSessions.AsNoTracking().Where(x => x.OrganizerId == user.Id).Include(x => x.Quiz).Include(x => x.Participants).OrderByDescending(x => x.CreatedAt).Select(x => (object)new { x.Code, x.Status, x.CreatedAt, x.FinishedAt, Quiz = x.Quiz.Title, Players = x.Participants.Count }).ToListAsync()
-        : await db.SessionParticipants.AsNoTracking().Where(x => x.UserId == user.Id).Include(x => x.Session).ThenInclude(x => x.Quiz).OrderByDescending(x => x.JoinedAt).Select(x => (object)new { x.Session.Code, x.Session.Status, x.Session.CreatedAt, FinishedAt = x.Session.FinishedAt, Quiz = x.Session.Quiz.Title, Score = x.Score }).ToListAsync();
+        ? await db.QuizSessions.AsNoTracking().Where(x => x.Quiz.CreatorId == user.Id).Include(x => x.Quiz).OrderByDescending(x => x.CreatedAt).Select(x => (object)new { x.Code, x.Status, x.CreatedAt, x.FinishedAt, Quiz = x.Quiz.Title, Players = db.ParticipantAnswers.Where(a => a.SessionId == x.Id).Select(a => a.UserId).Distinct().Count() }).ToListAsync()
+        : await db.ParticipantAnswers.AsNoTracking().Where(x => x.UserId == user.Id).Include(x => x.Session).ThenInclude(x => x.Quiz).GroupBy(x => x.SessionId).Select(group => (object)new { Code = group.First().Session.Code, Status = group.First().Session.Status, CreatedAt = group.First().Session.CreatedAt, FinishedAt = group.First().Session.FinishedAt, Quiz = group.First().Session.Quiz.Title, Score = group.Sum(x => x.PointsEarned) }).ToListAsync();
     return Results.Ok(history);
 });
 
@@ -234,7 +236,7 @@ static object ToQuizDto(Quiz quiz) => new
 static async Task<AppUser?> CurrentUserAsync(HttpContext http, QuizDbContext db)
 {
     var id = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
-    return Guid.TryParse(id, out var userId) ? await db.Users.SingleOrDefaultAsync(x => x.Id == userId) : null;
+    return int.TryParse(id, out var userId) ? await db.Users.SingleOrDefaultAsync(x => x.Id == userId) : null;
 }
 static Task<AppUser?> RequireUserAsync(HttpContext http, QuizDbContext db) => CurrentUserAsync(http, db);
 static async Task SignInAsync(HttpContext http, AppUser user)

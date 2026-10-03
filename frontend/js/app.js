@@ -182,13 +182,13 @@ function addOption(questionNode, option = null) {
 
 async function saveQuiz() {
   const questions = $$("#questionsEditor .question-card").map((card) => ({
-    id: card.dataset.id,
+    id: card.dataset.id || null,
     text: card.querySelector(".q-text").value,
     kind: card.querySelector(".q-kind").value,
     imageUrl: card.querySelector(".q-image").value,
     choiceMode: card.querySelector(".q-mode").value,
     options: [...card.querySelectorAll(".option-row")].map((row) => ({
-      id: row.dataset.id,
+      id: row.dataset.id || null,
       text: row.querySelector(".opt-text").value,
       isCorrect: row.querySelector(".opt-correct").checked
     }))
