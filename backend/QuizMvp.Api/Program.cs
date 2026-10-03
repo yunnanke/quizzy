@@ -9,7 +9,7 @@ using QuizMvp.Api.Data;
 using QuizMvp.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-var frontendPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "frontend"));
+var frontendPath = ResolveFrontendPath(builder.Environment.ContentRootPath);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -252,4 +252,16 @@ static async Task<string> GenerateUniqueCodeAsync(QuizDbContext db)
         var code = new string(Enumerable.Range(0, 6).Select(_ => chars[Random.Shared.Next(chars.Length)]).ToArray());
         if (!await db.QuizSessions.AnyAsync(x => x.Code == code)) return code;
     }
+}
+
+static string ResolveFrontendPath(string contentRoot)
+{
+    var candidates = new[]
+    {
+        Path.Combine(contentRoot, "frontend"),
+        Path.GetFullPath(Path.Combine(contentRoot, "..", "..", "frontend"))
+    };
+
+    var path = candidates.FirstOrDefault(Directory.Exists);
+    return path ?? throw new DirectoryNotFoundException("Папка frontend не найдена.");
 }

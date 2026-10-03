@@ -4,12 +4,27 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>quizmvp-local-development</UserSecretsId>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
-  <!-- The legacy MVP stays buildable while the new backend is maintained separately. -->
   <ItemGroup>
-    <Compile Remove="backend\**" />
+    <Compile Remove="Program.cs" />
+    <Compile Remove="Models\**" />
+    <Compile Remove="Pages\**" />
+    <Compile Remove="Services\**" />
+    <Compile Include="backend\QuizMvp.Api\**\*.cs" Exclude="backend\QuizMvp.Api\bin\**;backend\QuizMvp.Api\obj\**" />
     <EmbeddedResource Remove="backend\**" />
     <None Remove="backend\**" />
+    <None Include="backend\QuizMvp.Api\**\*" Exclude="backend\QuizMvp.Api\**\*.cs;backend\QuizMvp.Api\**\*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.30">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.8" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 </Project>
