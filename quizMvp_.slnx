@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/QuizMvp.Api/QuizMvp.Api.csproj" />
+  </Folder>
+  <Project Path="QuizMvp.csproj" />
+</Solution>
